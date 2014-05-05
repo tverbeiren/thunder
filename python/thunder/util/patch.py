@@ -52,13 +52,14 @@ def patch(data, patch_sizes, border_widths=None):
     dims = getdims(data)
 
     if border_widths is None:
-        patches = data.map(lambda (k, v): (tuple([(x-1)/y for x, y in zip(k, patch_sizes)]), [(tuple([(x-1) % y for x, y in zip(k, patch_sizes)]), v)])) \
+        patches = data.map(lambda (k, v): (tuple([(x-dim_min) / patch_size for x, dim_min, patch_size in zip(k, dims.min, patch_sizes)]), \
+                                         [(tuple([(x-dim_min) % patch_size for x, dim_min, patch_size in zip(k, dims.min, patch_sizes)]), v)])) \
             .reduceByKey(lambda a, b: a+b) \
             .map(lambda (k, v): (k, ind_to_array(v, patch_sizes, time_first=True)))
     else:
         ranges = [[(w*patch_size-border_width+dim_min, w*patch_size+border_width+patch_size+dim_min)
                    for w in range(int(ceil(1.0 * (dim_max-dim_min)/patch_size)))]
-                  for dim_min, dim_max, patch_size, border_width in zip(dims.mim, dims.max, patch_sizes, border_widths)]
+                  for dim_min, dim_max, patch_size, border_width in zip(dims.min, dims.max, patch_sizes, border_widths)]
         patches = data.flatMap(lambda (k, v): filter_index(k, v, ranges)) \
             .map(lambda (k, v): (k, [v])) \
             .reduceByKey(lambda a, b: a+b) \
