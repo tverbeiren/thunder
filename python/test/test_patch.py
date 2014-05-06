@@ -71,6 +71,6 @@ class TestPatch(PatchTestCase):
             for j in range(10):
                 for k in range(10):
                     data_local += [((i,j,k),randn(2))]
-        data = sc.parallelize(data_local).cache()
+        data = self.sc.parallelize(data_local).cache()
         patches = patch(data,(2,2,2),(1,1,1))
         assert(allclose(patches.first()[1].shape),(2,4,4,4)) # trivial assertion, just to make sure the code doesn't crash
