@@ -1,6 +1,7 @@
 import shutil
 import tempfile
 from numpy import array, allclose
+from numpy.random import randn
 from thunder.util.patch import patch
 from test_utils import PySparkTestCase
 
@@ -63,3 +64,13 @@ class TestPatch(PatchTestCase):
         [  0.,   1.,   2.,   3.],
         [  0.,   5.,   6.,   7.],
         [  0.,   9.,  10.,  11.]]])))
+
+    def test_patch_with_border_3d(self):
+        data_local = []
+        for i in range(10):
+            for j in range(10):
+                for k in range(10):
+                    data_local += [((i,j,k),randn(2))]
+        data = sc.parallelize(data_local).cache()
+        patches = patch(data,(2,2,2),(1,1,1))
+        assert(allclose(patches.first()[1].shape),(2,4,4,4)) # trivial assertion, just to make sure the code doesn't crash
