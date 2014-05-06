@@ -61,7 +61,7 @@ def patch(data, patch_sizes, border_widths=None):
                    for w in range(int(ceil(1.0 * (dim_max-dim_min)/patch_size)))]
                   for dim_min, dim_max, patch_size, border_width in zip(dims.min, dims.max, patch_sizes, border_widths)]
         patches = data.flatMap(lambda (k, v): filter_index(k, v, ranges)) \
-            .groupByKey()
+            .groupByKey() \
             .map(lambda (k, v): (k, ind_to_array(v, tuple([patch_size+2*border_width for patch_size, border_width
                                                            in zip(patch_sizes, border_widths)]), time_first=True)))
 
