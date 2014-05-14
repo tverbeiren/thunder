@@ -7,10 +7,12 @@ import org.apache.spark.SparkContext
 import org.apache.spark.SparkContext._
 import org.apache.spark.streaming.StreamingContext
 import org.apache.spark.streaming.dstream.DStream
+import org.apache.spark.streaming.kafka
 import org.apache.spark.mllib.regression.LabeledPoint
 
 import scala.math.max
 import scala.math.ceil
+import org.apache.spark.streaming.kafka.KafkaUtils
 
 object Load {
 
@@ -237,6 +239,20 @@ object Load {
                          dir: String): DStream[Array[Double]] = {
     val Loader = new DataLoader(0)
     ssc.textFileStream(dir).map(Loader.get)
+
+  }
+
+  def loadStreamingDataFromKafka (ssc: StreamingContext): DStream[(String, String)] = {
+
+    //TODO: params hardcoded
+    val topics = "deep"
+    val numThreads = 20
+    val server = "kafka1.int.janelia.org:2181"
+    val group = "thunder"
+
+    val topicpMap = topics.split(",").map((_,numThreads.toInt)).toMap
+
+    KafkaUtils.createStream(ssc, server, group, topicpMap)
 
   }
 

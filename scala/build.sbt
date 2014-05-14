@@ -14,6 +14,8 @@ libraryDependencies += "org.apache.spark" %% "spark-streaming" % "0.9.0-incubati
 
 libraryDependencies += "org.apache.spark" % "spark-mllib_2.10" % "0.9.0-incubating"
 
+libraryDependencies += "org.apache.spark" % "spark-streaming-kafka_2.10" % "0.9.0-incubating"
+
 libraryDependencies += "org.scalatest" % "scalatest_2.10" % "2.0" % "test"
 
 libraryDependencies += "io.spray" %% "spray-json" % "1.2.5"
