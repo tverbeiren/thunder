@@ -1,3 +1,7 @@
+import AssemblyKeys._
+
+assemblySettings
+
 name := "Thunder"
 
 version := "0.1.0"
@@ -29,6 +33,15 @@ resolvers ++= Seq(
   "Spray Repository" at "http://repo.spray.cc/")
 
 
-
+mergeStrategy in assembly <<= (mergeStrategy in assembly) { (old) =>
+{
+  case PathList("javax", "servlet", xs @ _*) => MergeStrategy.last
+  case PathList("org", "apache", xs @ _*) => MergeStrategy.last
+  case PathList("com", "esotericsoftware", xs @ _*) => MergeStrategy.last
+  case PathList("org", "slf4j", xs @ _*) => MergeStrategy.last
+  case "about.html" => MergeStrategy.rename
+  case x => old(x)
+}
+}
 
 

@@ -7,7 +7,7 @@ import org.apache.spark.SparkContext
 import org.apache.spark.SparkContext._
 import org.apache.spark.streaming.StreamingContext
 import org.apache.spark.streaming.dstream.DStream
-import org.apache.spark.streaming.kafka
+import org.apache.spark.streaming.kafka.KafkaInputDStream
 import org.apache.spark.mllib.regression.LabeledPoint
 
 import scala.math.max
@@ -246,13 +246,17 @@ object Load {
 
     //TODO: params hardcoded
     val topics = "deep"
-    val numThreads = 20
+    val numThreads = 1
     val server = "kafka1.int.janelia.org:2181"
     val group = "thunder"
 
     val topicpMap = topics.split(",").map((_,numThreads.toInt)).toMap
 
-    KafkaUtils.createStream(ssc, server, group, topicpMap)
+    val kafkaInputs = (1 to 10).map { _ =>
+      KafkaUtils.createStream(ssc, server, group, topicpMap)
+    }
+
+    ssc.union(kafkaInputs)
 
   }
 

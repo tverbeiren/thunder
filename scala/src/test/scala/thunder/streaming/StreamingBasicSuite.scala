@@ -29,7 +29,7 @@ class StreamingBasicSuite extends FunSuite {
     .setMaster("local[2]")
     .setAppName("test")
 
-  test("streaming stats") {
+  ignore("streaming stats") {
 
     // set parameters
     val n = 1000 // number of data points per batch
@@ -125,7 +125,7 @@ class StreamingBasicSuite extends FunSuite {
 
   }
 
-  test("streaming k means with single cluster") {
+  ignore("streaming k means with single cluster") {
 
     // set parameters
     val k = 1 // number of clusters
