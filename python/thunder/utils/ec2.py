@@ -105,7 +105,7 @@ def install_thunder(master, opts, spark_version_string):
     print "Installing Thunder on the cluster..."
 
     # download and build thunder
-    ssh(master, opts, "rm -rf thunder && git clone https://github.com/freeman-lab/thunder.git")
+    ssh(master, opts, "rm -rf thunder && git clone https://github.com/tverbeiren/thunder.git")
     if opts.thunder_version.lower() != "head":
         tagOrHash = opts.thunder_version
         if '.' in tagOrHash and not (tagOrHash.startswith('v')):
