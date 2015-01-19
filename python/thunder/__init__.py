@@ -10,6 +10,7 @@ from thunder.regression.regress import MeanRegressionModel, LinearRegressionMode
 from thunder.clustering.kmeans import KMeans, KMeansModel
 from thunder.regression.tuning import TuningModel
 from thunder.regression.tuning import GaussianTuningModel, CircularTuningModel
+from thunder.imgprocessing.register import Register, CrossCorr
 
 # data types
 from thunder.rdds.series import Series
@@ -24,4 +25,4 @@ from thunder.utils.datasets import DataSets
 from thunder.utils.export import export
 from thunder.utils.context import ThunderContext
 
-__version__ = "0.4.0"
+__version__ = "0.5.0_dev"

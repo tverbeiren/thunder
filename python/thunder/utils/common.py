@@ -30,26 +30,75 @@ def checkparams(param, opts):
         raise ValueError("Option must be one of %s, got %s" % (str(opts)[1:-1], param))
 
 
+def selectByMatchingPrefix(param, opts):
+    """Given a string parameter and a sequence of possible options, returns an option that is uniquely
+    specified by matching its prefix to the passed parameter.
+
+    The match is checked without sensitivity to case.
+
+    Throws IndexError if none of opts starts with param, or if multiple opts start with param.
+
+    >> selectByMatchingPrefix("a", ["aardvark", "mongoose"])
+    "aardvark"
+    """
+    lparam = param.lower()
+    hits = [opt for opt in opts if opt.lower().startswith(lparam)]
+    nhits = len(hits)
+    if nhits == 1:
+        return hits[0]
+    if nhits:
+        raise IndexError("Multiple matches for for prefix '%s': %s") % (param, hits)
+    else:
+        raise IndexError("No matches for prefix '%s' found in options %s") % (param, opts)
+
+
+def smallest_float_type(dtype):
+    """Returns the smallest floating point dtype to which the passed dtype can be safely cast.
+
+    For integers and unsigned ints, this will generally be next floating point type larger than the integer type. So
+    for instance, smallest_float_type('uint8') -> dtype('float16'), smallest_float_type('int16') -> dtype('float32'),
+    smallest_float_type('uint32') -> dtype('float64').
+
+    This function relies on numpy's promote_types function.
+    """
+    from numpy import dtype as dtype_func
+    from numpy import promote_types
+    intype = dtype_func(dtype)
+    compsize = max(2, intype.itemsize)  # smallest float is at least 16 bits
+    comptype = dtype_func('=f'+str(compsize))  # compare to a float of the same size
+    return promote_types(intype, comptype)
+
+
 def pil_to_array(pilImage):
     """
     Load a PIL image and return it as a numpy array.  Only supports greyscale images;
     the return value will be an M x N array.
 
-    Adapted from matplotlib's pil_to_array, copyright 2009-2012 by John D Hunter.
+    Adapted from matplotlib's pil_to_array, copyright 2009-2012 by John D Hunter
     """
+    # This is intended to be used only with older versions of PIL, for which the new-style
+    # way of getting a numpy array (np.array(pilimg)) does not appear to work in all cases.
+    # np.array(pilimg) appears to work with Pillow 2.3.0; with PIL 1.1.7 it leads to
+    # errors similar to the following:
+    # In [15]: data = tsc.loadImages('/path/to/tifs/', inputformat='tif-stack')
+    # In [16]: data.first()[1].shape
+    # Out[16]: (1, 1, 1)
+    # In [17]: data.first()[1]
+    # Out[17]: array([[[ <PIL.TiffImagePlugin.TiffImageFile image mode=I;16 size=512x512 at 0x3B02B00>]]],
+    # dtype=object)
     def toarray(im_, dtype):
         """Return a 1D array of dtype."""
         from numpy import fromstring
         # Pillow wants us to use "tobytes"
         if hasattr(im_, 'tobytes'):
-            x_str = im_.tobytes('raw', im_.mode)
+               x_str = im_.tobytes('raw', im_.mode)
         else:
             x_str = im_.tostring('raw', im_.mode)
         x_ = fromstring(x_str, dtype)
         return x_
-
     if pilImage.mode in ('RGBA', 'RGBX', 'RGB'):
-        raise ValueError("Thunder only supports luminance / greyscale images; got image mode: '%s'" % pilImage.mode)
+        raise ValueError("Thunder only supports luminance / greyscale images in pil_to_array; got image mode: '%s'" %
+                         pilImage.mode)
     if pilImage.mode == 'L':
         im = pilImage  # no need to luminance images
         # return MxN luminance array
@@ -65,7 +114,8 @@ def pil_to_array(pilImage):
             x = toarray(im, '<u2')
         x.shape = im.size[1], im.size[0]
         return x.astype('=u2')
-    elif pilImage.mode.startswith('I;32'):
+    elif pilImage.mode.startswith('I;32') or pilImage.mode == 'I':
+        # default 'I' mode is 32 bit; see http://svn.effbot.org/public/tags/pil-1.1.7/libImaging/Unpack.c (at bottom)
         # return MxN luminance array of uint32
         im = pilImage
         if im.mode.endswith('B'):
@@ -83,7 +133,8 @@ def pil_to_array(pilImage):
             x = toarray(im, '<f2')
         x.shape = im.size[1], im.size[0]
         return x.astype('=f2')
-    elif pilImage.mode.startswith('F;32'):
+    elif pilImage.mode.startswith('F;32') or pilImage.mode == 'F':
+        # default 'F' mode is 32 bit; see http://svn.effbot.org/public/tags/pil-1.1.7/libImaging/Unpack.c (at bottom)
         # return MxN luminance array of float32
         im = pilImage
         if im.mode.endswith('B'):
@@ -93,8 +144,8 @@ def pil_to_array(pilImage):
         x.shape = im.size[1], im.size[0]
         return x.astype('=f4')
     else:  # try to convert to an rgba image
-        raise ValueError("Thunder only supports luminance / greyscale images; got unknown image mode: '%s'"
-                         % pilImage.mode)
+        raise ValueError("Thunder only supports luminance / greyscale images in pil_to_array; got unknown image " +
+                         "mode: '%s'" % pilImage.mode)
 
 
 def parseMemoryString(memstr):
@@ -125,3 +176,17 @@ def parseMemoryString(memstr):
     else:
         return int(memstr)
 
+
+def raiseErrorIfPathExists(path):
+    """Raises a ValueError if the passed path string is found to already exist.
+
+    The ValueError message will suggest calling with overwrite=True; this function is expected to be
+    called from the various output methods that accept an 'overwrite' keyword argument.
+    """
+    # check that specified output path does not already exist
+    from thunder.rdds.fileio.readers import getFileReaderForPath
+    reader = getFileReaderForPath(path)()
+    existing = reader.list(path, includeDirectories=True)
+    if existing:
+        raise ValueError("Path %s appears to already exist. Specify a new directory, or call " % path +
+                         "with overwrite=True to overwrite.")

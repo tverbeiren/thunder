@@ -1,11 +1,23 @@
+import glob
 import json
-from numpy import dtype, array, allclose, arange
 import os
 import struct
-from nose.tools import assert_equals, assert_true, assert_almost_equal
+import unittest
+
+from nose.tools import assert_almost_equal, assert_equals, assert_false, assert_true, assert_raises
+from numpy import allclose, arange, array, array_equal, dtype
 
 from thunder.rdds.fileio.seriesloader import SeriesLoader
-from test_utils import PySparkTestCaseWithOutputDir
+from thunder.utils.common import smallest_float_type
+from test_utils import PySparkTestCase, PySparkTestCaseWithOutputDir
+
+_have_image = False
+try:
+    from PIL import Image
+    _have_image = True
+except ImportError:
+    # PIL not available; skip tests that require it
+    Image = None
 
 
 class SeriesBinaryTestData(object):
@@ -110,21 +122,153 @@ class SeriesBinaryTestData(object):
         return cls(keys, vals, keydtype, valdtype)
 
 
+class TestSeriesLoader(PySparkTestCase):
+    @staticmethod
+    def _findTestResourcesDir(resourcesdirname="resources"):
+        testdirpath = os.path.dirname(os.path.realpath(__file__))
+        testresourcesdirpath = os.path.join(testdirpath, resourcesdirname)
+        if not os.path.isdir(testresourcesdirpath):
+            raise IOError("Test resources directory "+testresourcesdirpath+" not found")
+        return testresourcesdirpath
+
+    @staticmethod
+    def _findSourceTreeDir(dirname="utils/data"):
+        testdirpath = os.path.dirname(os.path.realpath(__file__))
+        testresourcesdirpath = os.path.join(testdirpath, "..", "thunder", dirname)
+        if not os.path.isdir(testresourcesdirpath):
+            raise IOError("Directory "+testresourcesdirpath+" not found")
+        return testresourcesdirpath
+
+    def test_fromArrays(self):
+        ary = arange(8, dtype=dtype('int16')).reshape((2, 4))
+
+        series = SeriesLoader(self.sc).fromArrays(ary)
+
+        seriesvals = series.collect()
+        seriesary = series.pack()
+
+        # check ordering of keys
+        assert_equals((0, 0), seriesvals[0][0])  # first key
+        assert_equals((1, 0), seriesvals[1][0])  # second key
+        assert_equals((2, 0), seriesvals[2][0])
+        assert_equals((3, 0), seriesvals[3][0])
+        assert_equals((0, 1), seriesvals[4][0])
+        assert_equals((1, 1), seriesvals[5][0])
+        assert_equals((2, 1), seriesvals[6][0])
+        assert_equals((3, 1), seriesvals[7][0])
+
+        # check dimensions tuple is reversed from numpy shape
+        assert_equals(ary.shape[::-1], series.dims.count)
+
+        # check that values are in original order
+        collectedvals = array([kv[1] for kv in seriesvals], dtype=dtype('int16')).ravel()
+        assert_true(array_equal(ary.ravel(), collectedvals))
+
+        # check that packing returns transpose of original array
+        assert_true(array_equal(ary.T, seriesary))
+
+    def test_fromMultipleArrays(self):
+        ary = arange(8, dtype=dtype('int16')).reshape((2, 4))
+        ary2 = arange(8, 16, dtype=dtype('int16')).reshape((2, 4))
+
+        series = SeriesLoader(self.sc).fromArrays([ary, ary2])
+
+        seriesvals = series.collect()
+        seriesary = series.pack()
+
+        # check ordering of keys
+        assert_equals((0, 0), seriesvals[0][0])  # first key
+        assert_equals((1, 0), seriesvals[1][0])  # second key
+        assert_equals((3, 0), seriesvals[3][0])
+        assert_equals((0, 1), seriesvals[4][0])
+        assert_equals((3, 1), seriesvals[7][0])
+
+        # check dimensions tuple is reversed from numpy shape
+        assert_equals(ary.shape[::-1], series.dims.count)
+
+        # check that values are in original order, with subsequent point concatenated in values
+        collectedvals = array([kv[1] for kv in seriesvals], dtype=dtype('int16'))
+        assert_true(array_equal(ary.ravel(), collectedvals[:, 0]))
+        assert_true(array_equal(ary2.ravel(), collectedvals[:, 1]))
+
+        # check that packing returns concatenation of input arrays, with time as first dimension
+        assert_true(array_equal(ary.T, seriesary[0]))
+        assert_true(array_equal(ary2.T, seriesary[1]))
+
+    @unittest.skipIf(not _have_image, "PIL/pillow not installed or not functional")
+    def test_fromMultipageTif(self):
+        testresourcesdir = TestSeriesLoader._findTestResourcesDir()
+        imagepath = os.path.join(testresourcesdir, "multilayer_tif", "dotdotdot_lzw.tif")
+
+        testimg_pil = Image.open(imagepath)
+        testimg_arys = list()
+        testimg_arys.append(array(testimg_pil))
+        testimg_pil.seek(1)
+        testimg_arys.append(array(testimg_pil))
+        testimg_pil.seek(2)
+        testimg_arys.append(array(testimg_pil))
+
+        series = SeriesLoader(self.sc).fromMultipageTif(imagepath)
+        assert_equals('float16', series._dtype)
+        series_ary = series.pack()
+
+        assert_equals((70, 75, 3), series.dims.count)
+        assert_equals((70, 75, 3), series_ary.shape)
+        assert_true(array_equal(testimg_arys[0], series_ary[:, :, 0]))
+        assert_true(array_equal(testimg_arys[1], series_ary[:, :, 1]))
+        assert_true(array_equal(testimg_arys[2], series_ary[:, :, 2]))
+
+    def _run_fromFishTif(self, blocksize):
+        imagepath = TestSeriesLoader._findSourceTreeDir("utils/data/fish/tif-stack")
+        series = SeriesLoader(self.sc).fromMultipageTif(imagepath, blockSize=blocksize)
+        assert_equals('float16', series._dtype)
+        series_ary = series.pack()
+        series_ary_xpose = series.pack(transpose=True)
+        assert_equals('float16', str(series_ary.dtype))
+        assert_equals((76, 87, 2), series.dims.count)
+        assert_equals((20, 76, 87, 2), series_ary.shape)
+        assert_equals((20, 2, 87, 76), series_ary_xpose.shape)
+
+    @unittest.skipIf(not _have_image, "PIL/pillow not installed or not functional")
+    def test_fromFishTif(self):
+        self._run_fromFishTif("150M")
+
+    @unittest.skipIf(not _have_image, "PIL/pillow not installed or not functional")
+    def test_fromFishTifWithTinyBlocks(self):
+        self._run_fromFishTif(blocksize=76*20)
+
+
+class TestSeriesLoaderFromStacks(PySparkTestCaseWithOutputDir):
+    def test_loadStacksAsSeries(self):
+        rangeary = arange(64*128, dtype=dtype('int16'))
+        rangeary.shape = (64, 128)
+        filepath = os.path.join(self.outputdir, "rangeary.stack")
+        rangeary.tofile(filepath)
+
+        series = SeriesLoader(self.sc).fromStack(filepath, dims=(128, 64))
+        series_ary = series.pack()
+
+        assert_equals((128, 64), series.dims.count)
+        assert_equals((128, 64), series_ary.shape)
+        assert_true(array_equal(rangeary.T, series_ary))
+
+
 class TestSeriesBinaryLoader(PySparkTestCaseWithOutputDir):
 
     def _run_tst_fromBinary(self, useConfJson=False):
         # run this as a single big test so as to avoid repeated setUp and tearDown of the spark context
-        DATA = []
         # data will be a sequence of test data
         # all keys and all values in a test data item must be of the same length
         # keys get converted to ints regardless of raw input format
-        DATA.append(SeriesBinaryTestData.fromArrays([[1, 2, 3]], [[11, 12, 13]], 'int16', 'int16'))
-        DATA.append(SeriesBinaryTestData.fromArrays([[1, 2, 3], [5, 6, 7]], [[11], [12]], 'int16', 'int16'))
-        DATA.append(SeriesBinaryTestData.fromArrays([[1, 2, 3]], [[11, 12, 13]], 'int16', 'int32'))
-        DATA.append(SeriesBinaryTestData.fromArrays([[1, 2, 3]], [[11, 12, 13]], 'int32', 'int16'))
-        DATA.append(SeriesBinaryTestData.fromArrays([[1, 2, 3]], [[11.0, 12.0, 13.0]], 'int16', 'float32'))
-        DATA.append(SeriesBinaryTestData.fromArrays([[1, 2, 3]], [[11.0, 12.0, 13.0]], 'float32', 'float32'))
-        DATA.append(SeriesBinaryTestData.fromArrays([[2, 3, 4]], [[11.0, 12.0, 13.0]], 'float32', 'float32'))
+        DATA = [
+            SeriesBinaryTestData.fromArrays([[1, 2, 3]], [[11, 12, 13]], 'int16', 'int16'),
+            SeriesBinaryTestData.fromArrays([[1, 2, 3], [5, 6, 7]], [[11], [12]], 'int16', 'int16'),
+            SeriesBinaryTestData.fromArrays([[1, 2, 3]], [[11, 12, 13]], 'int16', 'int32'),
+            SeriesBinaryTestData.fromArrays([[1, 2, 3]], [[11, 12, 13]], 'int32', 'int16'),
+            SeriesBinaryTestData.fromArrays([[1, 2, 3]], [[11.0, 12.0, 13.0]], 'int16', 'float32'),
+            SeriesBinaryTestData.fromArrays([[1, 2, 3]], [[11.0, 12.0, 13.0]], 'float32', 'float32'),
+            SeriesBinaryTestData.fromArrays([[2, 3, 4]], [[11.0, 12.0, 13.0]], 'float32', 'float32'),
+        ]
 
         for itemidx, item in enumerate(DATA):
             outsubdir = os.path.join(self.outputdir, 'input%d' % itemidx)
@@ -156,16 +300,17 @@ class TestSeriesBinaryLoader(PySparkTestCaseWithOutputDir):
 
             for expected, actual in zip(expecteddata, seriesdata):
                 expectedkeys = tuple(expected[0])
-                expectedvals = array(expected[1], dtype=item.valDType)
+                expectedtype = smallest_float_type(item.valDType)
+                expectedvals = array(expected[1], dtype=expectedtype)
                 assert_equals(expectedkeys, actual[0],
                               "Key mismatch in item %d; expected %s, got %s" %
                               (itemidx, str(expectedkeys), str(actual[0])))
                 assert_true(allclose(expectedvals, actual[1]),
                             "Value mismatch in item %d; expected %s, got %s" %
                             (itemidx, str(expectedvals), str(actual[1])))
-                assert_equals(item.valDType, actual[1].dtype,
+                assert_equals(expectedtype, str(actual[1].dtype),
                               "Value type mismatch in item %d; expected %s, got %s" %
-                              (itemidx, str(item.valDType), str(actual[1].dtype)))
+                              (itemidx, expectedtype, str(actual[1].dtype)))
 
     def test_fromBinary(self):
         self._run_tst_fromBinary()
@@ -182,11 +327,10 @@ class TestSeriesBinaryWriteFromStack(PySparkTestCaseWithOutputDir):
         os.mkdir(insubdir)
 
         outsubdir = os.path.join(self.outputdir, 'output%d' % testCount)
-        #os.mkdir(outsubdir)
 
-        for aryCount, array in enumerate(arrays):
+        for aryCount, ary in enumerate(arrays):
             # array.tofile always writes in column-major order...
-            array.tofile(os.path.join(insubdir, "img%02d.stack" % aryCount))
+            ary.tofile(os.path.join(insubdir, "img%02d.stack" % aryCount))
 
         # ... but we will read and interpret these as though they are in row-major order
         dims = list(arrays[0].shape)
@@ -195,12 +339,29 @@ class TestSeriesBinaryWriteFromStack(PySparkTestCaseWithOutputDir):
         underTest = SeriesLoader(self.sc)
 
         underTest.saveFromStack(insubdir, outsubdir, dims, blockSize=blockSize, datatype=str(arrays[0].dtype))
+        series = underTest.fromStack(insubdir, dims, datatype=str(arrays[0].dtype))
 
-        roundtripped = underTest.fromBinary(outsubdir).collect()
+        roundtripped_series = underTest.fromBinary(outsubdir)
+        roundtripped = roundtripped_series.collect()
+        direct = series.collect()
 
-        for serieskeys, seriesvalues in roundtripped:
+        expecteddtype = str(smallest_float_type(arrays[0].dtype))
+        assert_equals(expecteddtype, roundtripped_series.dtype)
+        assert_equals(expecteddtype, series.dtype)
+        assert_equals(expecteddtype, str(roundtripped[0][1].dtype))
+        assert_equals(expecteddtype, str(direct[0][1].dtype))
+
+        with open(os.path.join(outsubdir, "conf.json"), 'r') as fp:
+            # check that binary series file data type *matches* input stack data type (not yet converted to float)
+            # at least according to conf.json
+            conf = json.load(fp)
+            assert_equals(str(arrays[0].dtype), conf["valuetype"])
+
+        for ((serieskeys, seriesvalues), (directkeys, directvalues)) in zip(roundtripped, direct):
+            assert_equals(directkeys, serieskeys)
+            assert_equals(directvalues, seriesvalues)
+
             for seriesidx, seriesval in enumerate(seriesvalues):
-                #print "seriesidx: %d; serieskeys: %s; seriesval: %g" % (seriesidx, serieskeys, seriesval)
                 # flip indices again for row vs col-major insanity
                 arykeys = list(serieskeys)
                 arykeys.reverse()
@@ -217,7 +378,6 @@ class TestSeriesBinaryWriteFromStack(PySparkTestCaseWithOutputDir):
 
     def _roundtrip_tst_driver(self, moreTests=False):
         # parameterized test fixture
-        #arrays = [arange(6, dtype='int16').reshape((2, 3), order='F')]
         arrays = TestSeriesBinaryWriteFromStack.generate_tst_images(1, (2, 3), "int16")
         self._run_roundtrip_tst(0, arrays, 6*2)
         self._run_roundtrip_tst(1, arrays, 2*2)
@@ -238,3 +398,82 @@ class TestSeriesBinaryWriteFromStack(PySparkTestCaseWithOutputDir):
 
     def test_roundtrip(self):
         self._roundtrip_tst_driver(False)
+
+
+class TestSeriesBinaryRoundtrip(PySparkTestCaseWithOutputDir):
+
+    def _run_roundtrip_tst(self, testIdx, nimages, aryShape, dtypeSpec, npartitions):
+        testArrays = TestSeriesBinaryWriteFromStack.generate_tst_images(nimages, aryShape, dtypeSpec)
+        loader = SeriesLoader(self.sc)
+        series = loader.fromArrays(testArrays)
+
+        saveDirPath = os.path.join(self.outputdir, 'save%d' % testIdx)
+        series.repartition(npartitions)  # note: this does an elementwise shuffle! won't be in sorted order
+        series.saveAsBinarySeries(saveDirPath)
+
+        nnonemptyPartitions = 0
+        for partitionList in series.rdd.glom().collect():
+            if partitionList:
+                nnonemptyPartitions += 1
+        del partitionList
+        nsaveFiles = len(glob.glob(saveDirPath + os.sep + "*.bin"))
+
+        roundtrippedSeries = loader.fromBinary(saveDirPath)
+
+        with open(os.path.join(saveDirPath, "conf.json"), 'r') as fp:
+            conf = json.load(fp)
+
+        # sorting is required here b/c of the randomization induced by the repartition.
+        # orig and roundtripped will in general be different from each other, since roundtripped
+        # will have (0, 0, 0) index as first element (since it will be the lexicographically first
+        # file) while orig has only a 1 in npartitions chance of starting with (0, 0, 0) after repartition.
+        expectedPackedAry = series.pack(sorting=True)
+        actualPackedAry = roundtrippedSeries.pack(sorting=True)
+
+        assert_true(array_equal(expectedPackedAry, actualPackedAry))
+
+        assert_equals(nnonemptyPartitions, nsaveFiles)
+
+        assert_equals(len(aryShape), conf["nkeys"])
+        assert_equals(nimages, conf["nvalues"])
+        assert_equals("int16", conf["keytype"])
+        assert_equals(str(series.dtype), conf["valuetype"])
+        # check that we have converted ourselves to an appropriate float after reloading
+        assert_equals(str(smallest_float_type(series.dtype)), str(roundtrippedSeries.dtype))
+
+    def test_roundtrip(self):
+        self._run_roundtrip_tst(0, 2, (2, 5, 5), "int16", 1)
+        self._run_roundtrip_tst(1, 2, (2, 5, 5), "float32", 2)
+        self._run_roundtrip_tst(2, 4, (5, 25, 25), "float16", 5)
+
+
+class TestSeriesBlocksRoundtrip(PySparkTestCase):
+
+    def _run_roundtrip_tst(self, nimages, aryShape, dtypeSpec, sizeSpec):
+        testArrays = TestSeriesBinaryWriteFromStack.generate_tst_images(nimages, aryShape, dtypeSpec)
+        loader = SeriesLoader(self.sc)
+        series = loader.fromArrays(testArrays)
+
+        blocks = series.toBlocks(sizeSpec)
+
+        roundtrippedSeries = blocks.toSeries(newdtype=series.dtype)
+
+        packedSeries = series.pack()
+        packedRoundtrippedSeries = roundtrippedSeries.pack()
+
+        assert_true(array_equal(packedSeries, packedRoundtrippedSeries))
+
+    def _run_roundtrip_exception_tst(self, nimages, aryShape, dtypeSpec, sizeSpec):
+        testArrays = TestSeriesBinaryWriteFromStack.generate_tst_images(nimages, aryShape, dtypeSpec)
+        loader = SeriesLoader(self.sc)
+        series = loader.fromArrays(testArrays)
+
+        assert_raises(ValueError, series.toBlocks, sizeSpec)
+
+    def test_roundtrip(self):
+        self._run_roundtrip_tst(2, (2, 5, 5), "int16", (1, 1, 2))
+        self._run_roundtrip_tst(2, (2, 5, 5), "int16", (1, 5, 2))
+        self._run_roundtrip_tst(2, (2, 5, 5), "int16", (5, 5, 2))
+        self._run_roundtrip_tst(2, (2, 5, 5), "uint8", 20)
+
+        self._run_roundtrip_exception_tst(2, (2, 5, 5), "int16", (1, 5, 1))

@@ -29,18 +29,27 @@ class Dimensions(object):
         return tuple(map(lambda x: x + 1, map(subtract, self.max, self.min)))
 
     @classmethod
-    def fromNumpyDimsTuple(cls, tup):
-        """Generates a Dimensions object equivalent to the passed numpy-style array.dims tuple
+    def fromTuple(cls, tup):
+        """Generates a Dimensions object from the passed tuple.
         """
         mx = [v-1 for v in tup]
         mn = [0] * len(tup)
         return cls(values=[mx, mn], n=len(tup))
 
     def __str__(self):
-        return "Dimensions: min=%s, max=%s, count=%s" % (str(self.min), str(self.max), str(self.count))
+        return "min=%s, max=%s, count=%s" % (str(self.min), str(self.max), str(self.count))
 
     def __repr__(self):
-        return "Dimensions(values=[%s, %s], n=%d)" %(str(self.min), str(self.max), len(self.min))
+        return "Dimensions(values=[%s, %s], n=%d)" % (str(self.min), str(self.max), len(self.min))
+
+    def __len__(self):
+        return len(self.min)
+
+    def __iter__(self):
+        return iter(self.count)
+
+    def __getitem__(self, item):
+        return self.count[item]
 
 
 def _indtosub_converter(dims, order='F', onebased=True):
