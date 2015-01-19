@@ -48,7 +48,7 @@ def install_thunder(master, opts):
     ssh(master, opts, "source ~/.bash_profile && pip install mpld3 && pip install seaborn "
                       "&& pip install jinja2 && pip install -U scikit-learn")
     # install ipython 1.1
-    ssh(master, opts, "pip uninstall -y ipython")
+    #ssh(master, opts, "pip uninstall -y ipython")
     ssh(master, opts, "git clone https://github.com/ipython/ipython.git")
     ssh(master, opts, "cd ipython && git checkout tags/rel-1.1.0")
     ssh(master, opts, "cd ipython && sudo python setup.py install")
