@@ -104,6 +104,10 @@ def install_thunder(master, opts, spark_version_string):
     """ Install Thunder and dependencies on a Spark EC2 cluster"""
     print "Installing Thunder on the cluster..."
 
+    # Start setting up Anaconda for easier Python package mgmt -- TVE
+    ssh(master, opts, "cd /root && wget http://repo.continuum.io/archive/Anaconda-2.1.0-Linux-x86_64.sh")
+    ssh(master, opts, "bash /root/Anaconda-2.0.1-Linux-x86_64.sh -b -f -p /root/anaconda")
+    
     # download and build thunder
     ssh(master, opts, "rm -rf thunder && git clone https://github.com/tverbeiren/thunder.git")
     if opts.thunder_version.lower() != "head":
@@ -154,6 +158,10 @@ def install_thunder(master, opts, spark_version_string):
     ssh(master, opts, "echo 'export SPARK_HOME=/root/spark' >> /root/.bash_profile")
     ssh(master, opts, "echo 'export PYTHONPATH=/root/thunder/python' >> /root/.bash_profile")
     ssh(master, opts, "echo 'export IPYTHON=1' >> /root/.bash_profile")
+
+    # Setup connection keys for Amazon -- TVE
+    ssh(master, opts, "echo 'export AWS_ACCESS_KEY_ID="+s3_access_key+"'" + " >> /root/.bash_profile")
+    ssh(master, opts, "echo 'export AWS_SECRET_ACCESS_KEY="+s3_secret_key+"'" + " >> /root/.bash_profile")
 
     # need to explicitly set PYSPARK_PYTHON with spark 1.2.0; otherwise fails with:
     # "IPython requires Python 2.7+; please install python2.7 or set PYSPARK_PYTHON"
