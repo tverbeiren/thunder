@@ -106,8 +106,14 @@ def install_thunder(master, opts, spark_version_string):
 
     # Start setting up Anaconda for easier Python package mgmt -- TVE
     # Might want to unpack once and distribute after that...
-    ssh(master, opts, "[[ -f '~/Anaconda-2.1.0-Linux-x86_64.sh' ]]  || wget http://repo.continuum.io/archive/Anaconda-2.1.0-Linux-x86_64.sh")
-    ssh(master, opts, "[[ -d '~/anaconda' ]]  || bash /root/Anaconda-2.1.0-Linux-x86_64.sh -b -f -p /root/anaconda")
+    # First install on master, then on slaves via pssh. Should probably copy from master instead of downloading again...
+    print "Intalling Anaconda on master and slaves..."
+    ssh(master, opts, "[[ -f '/root/Anaconda-2.1.0-Linux-x86_64.sh' ]]  || wget http://repo.continuum.io/archive/Anaconda-2.1.0-Linux-x86_64.sh")
+    ssh(master, opts, "[[ -d '/root/anaconda' ]]  || bash /root/Anaconda-2.1.0-Linux-x86_64.sh -b -f -p /root/anaconda")
+    ssh(master, opts, "pscp.pssh -h /root/spark-ec2/slaves /root/Anaconda-2.1.0-Linux-x86_64.sh /root/Anaconda-2.1.0-Linux-x86_64.sh")
+ #   ssh(master, opts, "pssh -i -h /root/spark-ec2/slaves '[[ -f /root/Anaconda-2.1.0-Linux-x86_64.sh ]]  || wget http://repo.continuum.io/archive/Anaconda-2.1.0-Linux-x86_64.sh'")
+    ssh(master, opts, "pssh -t 0 -h /root/spark-ec2/slaves '[[ -d /root/anaconda ]]  || bash /root/Anaconda-2.1.0-Linux-x86_64.sh -b -f -p /root/anaconda'")
+    ssh(master, opts, "echo 'export PATH=/root/anaconda/anaconda/bin:$PATH' >> /root/.bash_profile")
     
     # download and build thunder
     ssh(master, opts, "rm -rf thunder && git clone https://github.com/tverbeiren/thunder.git")
@@ -150,9 +156,8 @@ def install_thunder(master, opts, spark_version_string):
                       "&& pip install jinja2 && pip install -U scikit-learn")
 
     # install ipython 1.1
-    # ssh(master, opts, "[[ -n 'pip show ipython' ]] && pip uninstall -y ipython")
-    print "Executing [[ -d '/root/ipython' ]] || git clone https://github.com/ipython/ipython.git"
-    ssh(master, opts, "[[ -d '~/ipython' ]] || git clone https://github.com/ipython/ipython.git")
+    ssh(master, opts, "pip freeze | grep ipython > /dev/null && pip uninstall -y ipython")
+    ssh(master, opts, "[[ -d '/root/ipython' ]] || git clone https://github.com/ipython/ipython.git")
     ssh(master, opts, "cd ipython && git checkout tags/rel-1.1.0")
     ssh(master, opts, "cd ipython && sudo python setup.py install")
 
@@ -167,7 +172,7 @@ def install_thunder(master, opts, spark_version_string):
     # "java.lang.IllegalArgumentException: port out of range" [SPARK-3772]
     # this logic doesn't work if we get a hash here; assume in this case it's a recent version of Spark
     if (not '.' in spark_version_string) or LooseVersion(spark_version_string) >= LooseVersion("1.2.0"):
-        ssh(master, opts, "echo 'export PYSPARK_PYTHON=/usr/bin/python' >> /root/.bash_profile")
+        ssh(master, opts, "echo 'export PYSPARK_PYTHON=/root/anaconda/bin/python' >> /root/.bash_profile")
     ssh(master, opts, "echo 'export PATH=/root/thunder/python/bin:$PATH' >> /root/.bash_profile")
 
     # customize spark configuration parameters
