@@ -150,7 +150,7 @@ def install_thunder(master, opts, spark_version_string):
                       "&& pip install jinja2 && pip install -U scikit-learn")
 
     # install ipython 1.1
-    ssh(master, opts, "[[ -n 'pip show ipython' ]] && pip uninstall -y ipython")
+    # ssh(master, opts, "[[ -n 'pip show ipython' ]] && pip uninstall -y ipython")
     print "Executing [[ -d '/root/ipython' ]] || git clone https://github.com/ipython/ipython.git"
     ssh(master, opts, "[[ -d '~/ipython' ]] || git clone https://github.com/ipython/ipython.git")
     ssh(master, opts, "cd ipython && git checkout tags/rel-1.1.0")
