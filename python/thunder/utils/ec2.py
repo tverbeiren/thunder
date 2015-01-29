@@ -105,8 +105,9 @@ def install_thunder(master, opts, spark_version_string):
     print "Installing Thunder on the cluster..."
 
     # Start setting up Anaconda for easier Python package mgmt -- TVE
-    ssh(master, opts, "cd /root && wget http://repo.continuum.io/archive/Anaconda-2.1.0-Linux-x86_64.sh")
-    ssh(master, opts, "bash /root/Anaconda-2.0.1-Linux-x86_64.sh -b -f -p /root/anaconda")
+    # Might want to unpack once and distribute after that...
+    ssh(master, opts, "[[ -f '~/Anaconda-2.1.0-Linux-x86_64.sh' ]]  || wget http://repo.continuum.io/archive/Anaconda-2.1.0-Linux-x86_64.sh")
+    ssh(master, opts, "[[ -d '~/anaconda' ]]  || bash /root/Anaconda-2.1.0-Linux-x86_64.sh -b -f -p /root/anaconda")
     
     # download and build thunder
     ssh(master, opts, "rm -rf thunder && git clone https://github.com/tverbeiren/thunder.git")
@@ -136,21 +137,22 @@ def install_thunder(master, opts, spark_version_string):
     ssh(master, opts, "pssh -h /root/spark-ec2/slaves -I < /root/workers_pip_install.sh")
 
     # uninstall PIL, install Pillow on master and workers
-    ssh(master, opts, "rpm -e --nodeps python-imaging")
-    ssh(master, opts, "yum install -y libtiff libtiff-devel")
-    ssh(master, opts, "pip install Pillow")
-    worker_pillow_install = "rpm -e --nodeps python-imaging && yum install -y " \
-                            "libtiff libtiff-devel && pip install Pillow"
-    ssh(master, opts, "printf '"+worker_pillow_install+"' > /root/workers_pillow_install.sh")
-    ssh(master, opts, "pssh -h /root/spark-ec2/slaves -I < /root/workers_pillow_install.sh")
+    # ssh(master, opts, "rpm -e --nodeps python-imaging")
+    # ssh(master, opts, "yum install -y libtiff libtiff-devel")
+    # ssh(master, opts, "pip install Pillow")
+    # worker_pillow_install = "rpm -e --nodeps python-imaging && yum install -y " \
+    #                         "libtiff libtiff-devel && pip install Pillow"
+    # ssh(master, opts, "printf '"+worker_pillow_install+"' > /root/workers_pillow_install.sh")
+    # ssh(master, opts, "pssh -h /root/spark-ec2/slaves -I < /root/workers_pillow_install.sh")
 
     # install libraries
     ssh(master, opts, "source ~/.bash_profile && pip install mpld3 && pip install seaborn "
                       "&& pip install jinja2 && pip install -U scikit-learn")
 
     # install ipython 1.1
-    #ssh(master, opts, "pip uninstall -y ipython")
-    ssh(master, opts, "git clone https://github.com/ipython/ipython.git")
+    ssh(master, opts, "[[ -n 'pip show ipython' ]] && pip uninstall -y ipython")
+    print "Executing [[ -d '/root/ipython' ]] || git clone https://github.com/ipython/ipython.git"
+    ssh(master, opts, "[[ -d '~/ipython' ]] || git clone https://github.com/ipython/ipython.git")
     ssh(master, opts, "cd ipython && git checkout tags/rel-1.1.0")
     ssh(master, opts, "cd ipython && sudo python setup.py install")
 
@@ -158,10 +160,6 @@ def install_thunder(master, opts, spark_version_string):
     ssh(master, opts, "echo 'export SPARK_HOME=/root/spark' >> /root/.bash_profile")
     ssh(master, opts, "echo 'export PYTHONPATH=/root/thunder/python' >> /root/.bash_profile")
     ssh(master, opts, "echo 'export IPYTHON=1' >> /root/.bash_profile")
-
-    # Setup connection keys for Amazon -- TVE
-    ssh(master, opts, "echo 'export AWS_ACCESS_KEY_ID="+s3_access_key+"'" + " >> /root/.bash_profile")
-    ssh(master, opts, "echo 'export AWS_SECRET_ACCESS_KEY="+s3_secret_key+"'" + " >> /root/.bash_profile")
 
     # need to explicitly set PYSPARK_PYTHON with spark 1.2.0; otherwise fails with:
     # "IPython requires Python 2.7+; please install python2.7 or set PYSPARK_PYTHON"
@@ -175,6 +173,7 @@ def install_thunder(master, opts, spark_version_string):
     # customize spark configuration parameters
     ssh(master, opts, "echo 'spark.akka.frameSize=10000' >> /root/spark/conf/spark-defaults.conf")
     ssh(master, opts, "echo 'spark.kryoserializer.buffer.max.mb=1024' >> /root/spark/conf/spark-defaults.conf")
+    ssh(master, opts, "echo 'spark.core.connection.ack.wait.timeout=600' >> /root/spark/conf/spark-defaults.conf")
     ssh(master, opts, "echo 'spark.driver.maxResultSize=0' >> /root/spark/conf/spark-defaults.conf")
     ssh(master, opts, "echo 'export SPARK_DRIVER_MEMORY=20g' >> /root/spark/conf/spark-env.sh")
     ssh(master, opts, "sed 's/log4j.rootCategory=INFO/log4j.rootCategory=ERROR/g' "
@@ -186,6 +185,10 @@ def install_thunder(master, opts, spark_version_string):
     access, secret = get_s3_keys()
     filled = configstring.replace('ACCESS', access).replace('SECRET', secret)
     ssh(master, opts, "sed -i'f' 's,.*</configuration>.*,"+filled+"&,' /root/ephemeral-hdfs/conf/core-site.xml")
+
+    # Setup connection keys for Amazon in CLI as well -- TVE
+    ssh(master, opts, "echo 'export AWS_ACCESS_KEY_ID="+access+"'" + " >> /root/.bash_profile")
+    ssh(master, opts, "echo 'export AWS_SECRET_ACCESS_KEY="+secret+"'" + " >> /root/.bash_profile")
 
     # add AWS credentials to ~/.boto
     credentialstring = "[Credentials]\naws_access_key_id = ACCESS\naws_secret_access_key = SECRET\n"
@@ -289,6 +292,15 @@ if __name__ == "__main__":
     spark_home_loose_version = LooseVersion(spark_home_version_string)
 
     parser = OptionParser(usage="thunder-ec2 [options] <action> <clustername>",  add_help_option=False)
+
+    ## Latest options in spark ec2 have some more otions:
+    parser.add_option("--vpc-id", default='',
+                      help="")
+    parser.add_option("--subnet-id", default='',
+                      help="")
+    parser.add_option("--placement_group", default='',
+                      help="")
+
     parser.add_option("-h", "--help", action="help", help="Show this help message and exit")
     parser.add_option("-k", "--key-pair", help="Key pair to use on instances")
     parser.add_option("-s", "--slaves", type="int", default=1, help="Number of slaves to launch (default: 1)")
@@ -399,6 +411,7 @@ if __name__ == "__main__":
     # get version string as github commit hash if needed (mainly to support Spark release candidates)
     opts.spark_version = remap_spark_version_to_hash(spark_version_string)
 
+
     # Launch a cluster, setting several options to defaults
     # (use spark-ec2.py included with Spark for more control)
     if action == "launch":
@@ -419,10 +432,12 @@ if __name__ == "__main__":
         try:
             wait_for_cluster(conn, opts.wait, master_nodes, slave_nodes)
         except NameError:
+            # This required update because changed in spark dist -- TVE
             wait_for_cluster_state(
+                conn=conn,
+                opts=opts,
                 cluster_instances=(master_nodes + slave_nodes),
-                cluster_state='ssh-ready',
-                opts=opts
+                cluster_state='ssh-ready'
             )
         setup_cluster(conn, master_nodes, slave_nodes, opts, True)
         master = master_nodes[0].public_dns_name
