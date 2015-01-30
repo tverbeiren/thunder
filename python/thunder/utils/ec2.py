@@ -104,6 +104,9 @@ def install_thunder(master, opts, spark_version_string):
     """ Install Thunder and dependencies on a Spark EC2 cluster"""
     print "Installing Thunder on the cluster..."
 
+    # First pssh
+    ssh(master, opts, "yum install -y pssh")
+
     # Start setting up Anaconda for easier Python package mgmt -- TVE
     # Might want to unpack once and distribute after that...
     # First install on master, then on slaves via pssh. Should probably copy from master instead of downloading again...
@@ -127,7 +130,6 @@ def install_thunder(master, opts, spark_version_string):
     ssh(master, opts, "source ~/.bash_profile && thunder/python/bin/build")
 
     # copy local data examples to all workers
-    ssh(master, opts, "yum install -y pssh")
     ssh(master, opts, "pssh -h /root/spark-ec2/slaves mkdir -p /root/thunder/python/thunder/utils/data/")
     ssh(master, opts, "~/spark-ec2/copy-dir /root/thunder/python/thunder/utils/data/")
 
