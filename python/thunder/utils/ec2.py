@@ -113,7 +113,7 @@ def install_thunder(master, opts, spark_version_string):
     ssh(master, opts, "pscp.pssh -h /root/spark-ec2/slaves /root/Anaconda-2.1.0-Linux-x86_64.sh /root/Anaconda-2.1.0-Linux-x86_64.sh")
  #   ssh(master, opts, "pssh -i -h /root/spark-ec2/slaves '[[ -f /root/Anaconda-2.1.0-Linux-x86_64.sh ]]  || wget http://repo.continuum.io/archive/Anaconda-2.1.0-Linux-x86_64.sh'")
     ssh(master, opts, "pssh -t 0 -h /root/spark-ec2/slaves '[[ -d /root/anaconda ]]  || bash /root/Anaconda-2.1.0-Linux-x86_64.sh -b -f -p /root/anaconda'")
-    ssh(master, opts, "echo 'export PATH=/root/anaconda/anaconda/bin:$PATH' >> /root/.bash_profile")
+    ssh(master, opts, "echo 'export PATH=/root/anaconda/bin:$PATH' >> /root/.bash_profile")
     
     # download and build thunder
     ssh(master, opts, "rm -rf thunder && git clone https://github.com/tverbeiren/thunder.git")
@@ -124,7 +124,7 @@ def install_thunder(master, opts, spark_version_string):
             tagOrHash = 'v' + tagOrHash
         ssh(master, opts, "cd thunder && git checkout %s" % tagOrHash)
     ssh(master, opts, "chmod u+x thunder/python/bin/build")
-    ssh(master, opts, "thunder/python/bin/build")
+    ssh(master, opts, "source ~/.bash_profile && thunder/python/bin/build")
 
     # copy local data examples to all workers
     ssh(master, opts, "yum install -y pssh")
